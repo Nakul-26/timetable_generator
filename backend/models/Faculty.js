@@ -7,8 +7,8 @@ const { Schema } = mongoose;
 const FacultySchema = new Schema({
   id: { type: String, unique: true },
   name: String,
-  email: { type: String, unique: true, required: true },
-  password: { type: String, required: true },
+  email: { type: String, unique: true },
+  password: { type: String },
   role: { type: String, enum: ['admin', 'faculty'], default: 'faculty' }
 });
 
