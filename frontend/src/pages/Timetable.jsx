@@ -33,12 +33,17 @@ function Timetable() {
         axios.get("/faculties"),
         axios.get("/subjects"),
       ]);
-      setClassCombos(comboRes.data);
-      setClasses(classRes.data);
-      setFaculties(facRes.data);
-      setSubjects(subRes.data);
+      setClassCombos(Array.isArray(comboRes.data) ? comboRes.data : []);
+      setClasses(Array.isArray(classRes.data) ? classRes.data : []);
+      setFaculties(Array.isArray(facRes.data) ? facRes.data : []);
+      setSubjects(Array.isArray(subRes.data) ? subRes.data : []);
     } catch (err) {
       setError("Failed to fetch data.");
+      // Also reset states to empty arrays in case of error
+      setClassCombos([]);
+      setClasses([]);
+      setFaculties([]);
+      setSubjects([]);
     }
   };
 

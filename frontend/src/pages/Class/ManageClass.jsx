@@ -35,12 +35,11 @@ function ManageClass() {
   const fetchCombos = async () => {
     setLoading(true);
     try {
-      const comboRes = await api.get(("/create-and-assign-combos"), {}, { withCredentials: true });
-      console.log("combos:",comboRes);
-      setCombos(comboRes.data);
+      const comboRes = await api.get("/create-and-assign-combos");
+      setCombos(Array.isArray(comboRes.data) ? comboRes.data : []);
     } catch (err) {
-      console.log("error:",err);
       setError("Failed to fetch data.");
+      setCombos([]); // Reset combos to empty array on error
     }
     setLoading(false);
   };
@@ -52,11 +51,15 @@ function ManageClass() {
         const classRes = await api.get("/classes");
         const facultyRes = await api.get("/faculties");
         const subjectRes = await api.get("/subjects");
-        setTeachers(facultyRes.data);
-        setSubjects(subjectRes.data);
-        setClasses(classRes.data);
+        setTeachers(Array.isArray(facultyRes.data) ? facultyRes.data : []);
+        setSubjects(Array.isArray(subjectRes.data) ? subjectRes.data : []);
+        setClasses(Array.isArray(classRes.data) ? classRes.data : []);
       } catch (err) {
         setError("Failed to fetch classes.");
+        // Also reset states to empty arrays in case of error
+        setTeachers([]);
+        setSubjects([]);
+        setClasses([]);
       }
       setLoading(false);
     };

@@ -5,12 +5,15 @@ import jwt from 'jsonwebtoken';
 const { Schema } = mongoose;
 
 const FacultySchema = new Schema({
-  id: { type: String, unique: true },
+  id: { type: String }, // Not unique globally anymore
   name: String,
-  email: { type: String, unique: true },
+  email: { type: String, unique: true, sparse: true }, // Sparse index allows multiple nulls
   password: { type: String },
-  role: { type: String, enum: ['admin', 'faculty'], default: 'faculty' }
+  role: { type: String, enum: ['admin', 'faculty'], default: 'faculty' },
+  ownerId: { type: Schema.Types.ObjectId, ref: 'Faculty' }
 });
+
+FacultySchema.index({ id: 1, ownerId: 1 }, { unique: true, partialFilterExpression: { id: { $type: "string" } } });
 
 // Hash password before saving
 FacultySchema.pre('save', async function (next) {

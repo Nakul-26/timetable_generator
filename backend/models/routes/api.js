@@ -10,11 +10,22 @@ import mongoose from "mongoose";
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import auth from '../../middleware/auth.js';
+import rateLimit from 'express-rate-limit'; // Import rateLimit
 
 const router = Router();
 const protectedRouter = Router();
 
 protectedRouter.use(auth);
+
+// --- Rate Limiter for login ---
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // limit each IP to 5 login requests per windowMs
+  message:
+    "Too many login attempts from this IP, please try again after 15 minutes",
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+});
 
 // --- User Authentication ---
 router.post('/register', async (req, res) => {
@@ -29,7 +40,7 @@ router.post('/register', async (req, res) => {
   }
 });
 
-router.post('/login', async (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
     try {
         const { email, password } = req.body;
         const faculty = await Faculty.findOne({ email });
@@ -57,26 +68,32 @@ protectedRouter.get('/me', (req, res) => {
 });
 
 // --- Faculties CRUD ---
-//add faculties
+//add faculties (teachers)
 protectedRouter.post('/faculties', async (req, res) => {
   console.log("[POST /faculties] Body:", req.body);
   try {
-    const f = new Faculty();
-    f.id = req.body.id;
-    f.name = req.body.name;
+    const f = new Faculty({
+      ...req.body,
+      ownerId: req.user._id
+    });
     await f.save();
     console.log("[POST /faculties] Saved faculty:", f);
     res.json(f);
   } catch (e) {
+    if (e.code === 11000) {
+      return res.status(400).json({ error: 'A faculty with this ID already exists for you.' });
+    }
     res.status(400).json({ error: 'Bad Request' });
   }
 });
 
-//get all faculties
+//get all faculties for the current user (teachers they created + themselves)
 protectedRouter.get('/faculties', async (req, res) => {
-  console.log("[GET /faculties] Fetching all faculties");
+  console.log("[GET /faculties] Fetching all faculties for user:", req.user._id);
   try {
-    const faculties = await Faculty.find().lean();
+    const faculties = await Faculty.find({
+      $or: [{ ownerId: req.user._id }, { _id: req.user._id }]
+    }).lean();
     console.log("[GET /faculties] Found:", faculties.length, "records");
     res.json(faculties);
   } catch (e) {
@@ -84,7 +101,7 @@ protectedRouter.get('/faculties', async (req, res) => {
   }
 });
 
-// Update an existing faculty
+// Update an existing faculty (teacher)
 protectedRouter.put('/faculties/:id', async (req, res) => {
   console.log("[PUT /faculties/:id] Params:", req.params, "Body:", req.body);
   try {
@@ -93,13 +110,13 @@ protectedRouter.put('/faculties/:id', async (req, res) => {
     const updateData = { name, id: facultyId };
 
     const updatedFaculty = await Faculty.findOneAndUpdate(
-      { _id: id },
+      { _id: id, ownerId: req.user._id },
       updateData,
       { new: true, runValidators: true }
     );
     if (!updatedFaculty) {
       console.warn("[PUT /faculties/:id] Faculty not found for _id:", id);
-      return res.status(404).json({ error: 'Faculty not found.' });
+      return res.status(404).json({ error: 'Faculty not found or you do not have permission to edit it.' });
     }
     console.log("[PUT /faculties/:id] Updated faculty:", updatedFaculty);
     res.json(updatedFaculty);
@@ -108,20 +125,20 @@ protectedRouter.put('/faculties/:id', async (req, res) => {
   }
 });
 
-// Delete a faculty
+// Delete a faculty (teacher)
 protectedRouter.delete('/faculties/:id', async (req, res) => {
   console.log("[DELETE /faculties/:id] Params:", req.params);
   try {
     const { id } = req.params;
-    const deletedFaculty = await Faculty.findByIdAndDelete(id);
+    const deletedFaculty = await Faculty.findOneAndDelete({ _id: id, ownerId: req.user._id });
     if (!deletedFaculty) {
       console.warn("[DELETE /faculties/:id] Faculty not found:", id);
-      return res.status(404).json({ error: 'Faculty not found.' });
+      return res.status(404).json({ error: 'Faculty not found or you do not have permission to delete it.' });
     }
 
-    const deletedCombos = await Combo.deleteMany({ faculty_id: id });
+    const deletedCombos = await Combo.deleteMany({ faculty_id: id, ownerId: req.user._id });
     console.log(
-      `[DELETE /faculties/:id] Deleted ${deletedCombos.deletedCount} combos linked to faculty ${id}`
+      `[DELETE /faculties/:id] Deleted ${deletedCombos.deletedCount} combos linked to faculty ${id} for user ${req.user._id}`
     );
 
     console.log("[DELETE /faculties/:id] Deleted faculty:", deletedFaculty);
@@ -137,11 +154,8 @@ protectedRouter.post('/subjects', async (req, res) => {
   console.log("[POST /subjects] Body:", req.body);
   try {
     const s = new Subject({
-      id: req.body.id,
-      name: req.body.name,
-      no_of_hours_per_week: req.body.no_of_hours_per_week,
-      sem: req.body.sem,
-      type: req.body.type // ✅ new property
+      ...req.body,
+      ownerId: req.user._id
     });
 
     await s.save();
@@ -152,11 +166,11 @@ protectedRouter.post('/subjects', async (req, res) => {
   }
 });
 
-// Get all subjects
+// Get all subjects for the current user
 protectedRouter.get('/subjects', async (req, res) => {
-  console.log("[GET /subjects] Fetching all subjects");
+  console.log("[GET /subjects] Fetching all subjects for user:", req.user._id);
   try {
-    const subjects = await Subject.find().lean();
+    const subjects = await Subject.find({ ownerId: req.user._id }).lean();
     console.log("[GET /subjects] Found:", subjects.length, "records");
     res.json(subjects);
   } catch (e) {
@@ -171,13 +185,13 @@ protectedRouter.put('/subjects/:id', async (req, res) => {
     const { name, no_of_hours_per_week, sem, type } = req.body;
 
     const updatedSubject = await Subject.findOneAndUpdate(
-      { _id: id },
+      { _id: id, ownerId: req.user._id },
       { name, no_of_hours_per_week, sem, type }, // ✅ include type
       { new: true, runValidators: true }
     );
 
     if (!updatedSubject) {
-      return res.status(404).json({ error: "Subject not found." });
+      return res.status(404).json({ error: "Subject not found or you don't have permission to edit it." });
     }
     res.json(updatedSubject);
   } catch (e) {
@@ -189,14 +203,15 @@ protectedRouter.put('/subjects/:id', async (req, res) => {
 protectedRouter.delete('/subjects/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const deletedSubject = await Subject.findByIdAndDelete(id);
+    const deletedSubject = await Subject.findOneAndDelete({ _id: id, ownerId: req.user._id });
     if (!deletedSubject) {
-      return res.status(404).json({ error: "Subject not found." });
+      return res.status(404).json({ error: "Subject not found or you don't have permission to delete it." });
     }
 
-    const deletedCombos = await Combo.deleteMany({ subject_id: id });
+    // Also delete combos that use this subject for this user
+    const deletedCombos = await Combo.deleteMany({ subject_id: id, ownerId: req.user._id });
     console.log(
-      `[DELETE /faculties/:id] Deleted ${deletedCombos.deletedCount} combos linked to subject ${id}`
+      `[DELETE /subjects/:id] Deleted ${deletedCombos.deletedCount} combos linked to subject ${id} for user ${req.user._id}`
     );
 
     res.json({ message: "Subject deleted successfully." });
@@ -214,21 +229,25 @@ protectedRouter.post('/classes', async (req, res) => {
     const c = new ClassModel({
       ...req.body,
       assigned_teacher_subject_combos: req.body.assigned_teacher_subject_combos || [],
-      total_class_hours: req.body.total_class_hours || 0
+      total_class_hours: req.body.total_class_hours || 0,
+      ownerId: req.user._id
     });
     await c.save();
     console.log("[POST /classes] Saved class:", c);
     res.json(c);
   } catch (e) {
+    if (e.code === 11000) {
+      return res.status(400).json({ error: 'A class with this ID already exists.' });
+    }
     res.status(400).json({ error: 'Bad Request' });
   }
 });
 
-//get all classes
+//get all classes for the current user
 protectedRouter.get('/classes', async (req, res) => {
-  console.log("[GET /classes] Fetching all classes");
+  console.log("[GET /classes] Fetching all classes for user:", req.user._id);
   try {
-    const classes = await ClassModel.find().lean();
+    const classes = await ClassModel.find({ ownerId: req.user._id }).lean();
     console.log("[GET /classes] Found:", classes.length, "records");
     res.json(classes);
   } catch (e) {
@@ -244,12 +263,12 @@ protectedRouter.put('/classes/:id', async (req, res) => {
     const updateData = { name, sem, section };
 
     const updatedClass = await ClassModel.findOneAndUpdate(
-      { _id: id },
+      { _id: id, ownerId: req.user._id },
       updateData,
       { new: true, runValidators: true }
     );
     if (!updatedClass) {
-      return res.status(404).json({ error: 'Class not found.' });
+      return res.status(404).json({ error: 'Class not found or you do not have permission to edit it.' });
     }
     res.json(updatedClass);
   } catch (e) {
@@ -261,14 +280,14 @@ protectedRouter.put('/classes/:id', async (req, res) => {
 protectedRouter.delete('/classes/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const deletedClass = await ClassModel.findByIdAndDelete(id);
+    const deletedClass = await ClassModel.findOneAndDelete({ _id: id, ownerId: req.user._id });
     if (!deletedClass) {
-      return res.status(404).json({ error: 'Class not found.' });
+      return res.status(404).json({ error: 'Class not found or you do not have permission to delete it.' });
     }
 
-    const deletedCombos = await Combo.deleteMany({ class_id: id });
+    const deletedCombos = await Combo.deleteMany({ class_id: id, ownerId: req.user._id });
     console.log(
-      `[DELETE /faculties/:id] Deleted ${deletedCombos.deletedCount} combos linked to class ${id}`
+      `[DELETE /classes/:id] Deleted ${deletedCombos.deletedCount} combos linked to class ${id} for user ${req.user._id}`
     );
 
     res.json({ message: 'Class deleted successfully.' });
@@ -284,6 +303,7 @@ protectedRouter.post("/add-and-assign-combo", async (req, res) => {
 
   try {
     const { faculty_id, subject_id, combo_name, class_id } = req.body;
+    const ownerId = req.user._id;
 
     // Validate required fields
     if (!faculty_id || !subject_id || !combo_name || !class_id) {
@@ -293,14 +313,22 @@ protectedRouter.post("/add-and-assign-combo", async (req, res) => {
       });
     }
 
+    // Cross-entity ownership validation
+    const subject = await Subject.findOne({ _id: subject_id, ownerId });
+    const classModel = await ClassModel.findOne({ _id: class_id, ownerId });
+
+    if (!subject || !classModel) {
+      return res.status(403).json({ error: "Access denied. You do not own the subject or class." });
+    }
+
     // Create combo with class_id
-    const combo = new Combo({ faculty_id, subject_id, combo_name, class_id });
+    const combo = new Combo({ faculty_id, subject_id, combo_name, class_id, ownerId });
     await combo.save();
     console.log("[POST /add-and-assign-combo] Saved combo:", combo);
 
     // Assign combo to the class
     await ClassModel.updateOne(
-      { _id: class_id },
+      { _id: class_id, ownerId },
       { $addToSet: { assigned_teacher_subject_combos: combo._id } }
     );
 
@@ -313,10 +341,10 @@ protectedRouter.post("/add-and-assign-combo", async (req, res) => {
   }
 });
 
-// Get all combos with assigned class
+// Get all combos for the current user
 protectedRouter.get('/create-and-assign-combos', async (req, res) => {
   try {
-    const combos = await Combo.find().lean();
+    const combos = await Combo.find({ ownerId: req.user._id }).lean();
     res.json(combos);
   } catch (e) {
     res.status(500).json({ error: 'Internal Server Error' });
@@ -328,25 +356,23 @@ protectedRouter.put('/create-and-assign-combos/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const { faculty_id, subject_id, combo_name, class_id } = req.body;
+    const ownerId = req.user._id;
 
-    // Find existing combo
-    const existingCombo = await Combo.findById(id);
+    // Find existing combo and check ownership
+    const existingCombo = await Combo.findOne({ _id: id, ownerId });
     if (!existingCombo) {
-      return res.status(404).json({ error: 'Combo not found.' });
+      return res.status(404).json({ error: 'Combo not found or you do not have permission to edit it.' });
     }
 
-    // Validate subject & class semester match
+    // Validate subject & class semester match and ownership
     if (subject_id && class_id) {
       const [subject, classData] = await Promise.all([
-        Subject.findById(subject_id).lean(),
-        ClassModel.findById(class_id).lean()
+        Subject.findOne({ _id: subject_id, ownerId }).lean(),
+        ClassModel.findOne({ _id: class_id, ownerId }).lean()
       ]);
 
-      if (!subject) {
-        return res.status(404).json({ error: 'Subject not found.' });
-      }
-      if (!classData) {
-        return res.status(404).json({ error: 'Class not found.' });
+      if (!subject || !classData) {
+        return res.status(403).json({ error: 'Access denied. You do not own the subject or class.' });
       }
 
       if (subject.sem !== classData.sem) {
@@ -359,7 +385,7 @@ protectedRouter.put('/create-and-assign-combos/:id', async (req, res) => {
     // Unassign from old class if class_id changed
     if (existingCombo.class_id && existingCombo.class_id.toString() !== class_id) {
       await ClassModel.updateOne(
-        { _id: existingCombo.class_id },
+        { _id: existingCombo.class_id, ownerId },
         { $pull: { assigned_teacher_subject_combos: existingCombo._id } }
       );
     }
@@ -374,7 +400,7 @@ protectedRouter.put('/create-and-assign-combos/:id', async (req, res) => {
     // Assign to the new class
     if (class_id) {
       await ClassModel.updateOne(
-        { _id: class_id },
+        { _id: class_id, ownerId },
         { $addToSet: { assigned_teacher_subject_combos: existingCombo._id } }
       );
     }
@@ -398,16 +424,17 @@ protectedRouter.put('/create-and-assign-combos/:id', async (req, res) => {
 protectedRouter.delete('/create-and-assign-combos/:id', async (req, res) => {
   try {
     const { id } = req.params;
+    const ownerId = req.user._id;
 
-    const deletedCombo = await Combo.findByIdAndDelete(id);
+    const deletedCombo = await Combo.findOneAndDelete({ _id: id, ownerId });
     if (!deletedCombo) {
-      return res.status(404).json({ error: 'Combo not found.' });
+      return res.status(404).json({ error: 'Combo not found or you do not have permission to delete it.' });
     }
 
     // Unassign from the class
     if (deletedCombo.class_id) {
       await ClassModel.updateOne(
-        { _id: deletedCombo.class_id },
+        { _id: deletedCombo.class_id, ownerId },
         { $pull: { assigned_teacher_subject_combos: deletedCombo._id } }
       );
     }
@@ -420,14 +447,15 @@ protectedRouter.delete('/create-and-assign-combos/:id', async (req, res) => {
 
 // --- Timetable ---
 protectedRouter.post('/generate', async (req, res) => {
-  console.log("[POST /generate] Generating timetable");
+  console.log("[POST /generate] Generating timetable for user:", req.user._id);
   try {
-    const faculties = await Faculty.find().lean();
-    const subjects = await Subject.find().lean();
-    const classes = await ClassModel.find().lean();
-    const combos = await Combo.find().lean();
+    const ownerId = req.user._id;
+    const faculties = await Faculty.find().lean(); // Faculties are global
+    const subjects = await Subject.find({ ownerId }).lean();
+    const classes = await ClassModel.find({ ownerId }).lean();
+    const combos = await Combo.find({ ownerId }).lean();
 
-    console.log("[POST /generate] Counts:", {
+    console.log("[POST /generate] Counts for user:", {
       faculties: faculties.length,
       subjects: subjects.length,
       classes: classes.length,
@@ -449,7 +477,8 @@ protectedRouter.post('/generate', async (req, res) => {
 
     const rec = new TimetableResult({
       class_timetables: result.class_timetables,
-      faculty_timetables: result.faculty_timetables
+      faculty_timetables: result.faculty_timetables,
+      ownerId: ownerId
     });
     await rec.save();
     console.log("[POST /generate] Saved timetable result");
@@ -460,9 +489,9 @@ protectedRouter.post('/generate', async (req, res) => {
 });
 
 protectedRouter.get('/result/latest', async (req, res) => {
-  console.log("[GET /result/latest] Fetching latest timetable result");
+  console.log("[GET /result/latest] Fetching latest timetable result for user:", req.user._id);
   try {
-    const r = await TimetableResult.findOne().sort({ createdAt: -1 }).lean();
+    const r = await TimetableResult.findOne({ ownerId: req.user._id }).sort({ createdAt: -1 }).lean();
     console.log("[GET /result/latest] Found:", r ? "Yes" : "No");
     res.json(r);
   } catch (e) {
@@ -472,10 +501,11 @@ protectedRouter.get('/result/latest', async (req, res) => {
 
 protectedRouter.post("/result/regenerate", async (req, res) => {
   try {
-    const faculties = await Faculty.find().lean();
-    const subjects = await Subject.find().lean();
-    const classes = await ClassModel.find().lean();
-    const combos = await Combo.find().lean();
+    const ownerId = req.user._id;
+    const faculties = await Faculty.find().lean(); // Faculties are global
+    const subjects = await Subject.find({ ownerId }).lean();
+    const classes = await ClassModel.find({ ownerId }).lean();
+    const combos = await Combo.find({ ownerId }).lean();
 
     const { fixedSlots } = req.body;
 
@@ -496,6 +526,7 @@ protectedRouter.post("/result/regenerate", async (req, res) => {
       class_timetables: bestClassTimetables,
       faculty_timetables: bestFacultyTimetables,
       score: bestScore,
+      ownerId: ownerId
     });
 
     await rec.save();
@@ -514,13 +545,13 @@ protectedRouter.post("/result/regenerate", async (req, res) => {
 
 protectedRouter.delete("/timetables", async (req, res) => {
   try {
-    // Delete all timetables
-    const result = await TimetableResult.deleteMany({});
+    // Delete all timetables for the current user
+    const result = await TimetableResult.deleteMany({ ownerId: req.user._id });
 
     res.status(200).json({
       ok: true,
       deletedCount: result.deletedCount, // tells how many docs were removed
-      message: "All timetables deleted successfully"
+      message: "All your timetables have been deleted successfully"
     });
   } catch (err) {
     res.status(500).json({ ok: false, error: "Internal Server Error" });

@@ -11,6 +11,7 @@ export const AuthProvider = ({ children }) => {
         setLoading(true);
         try {
             const response = await API.get('/me');
+            console.log('AuthContext checkUser response:', response.data);
             setUser(response.data);
         } catch (error) {
             setUser(null);

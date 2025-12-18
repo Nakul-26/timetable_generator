@@ -31,11 +31,10 @@ const ManageTeacher = () => {
     setLoading(true);
     try {
       const comboRes = await API.get("/create-and-assign-combos");
-      console.log("combos:",comboRes);
-      setCombos(comboRes.data);
+      setCombos(Array.isArray(comboRes.data) ? comboRes.data : []);
     } catch (err) {
-      console.log("error:",err);
       setError("Failed to fetch data.");
+      setCombos([]);
     }
     setLoading(false);
   };
@@ -44,17 +43,17 @@ const ManageTeacher = () => {
     const fetchTeachers = async () => {
       setLoading(true);
       try {
-        console.log("trying");
         const facultyRes = await API.get("/faculties");
         const classRes = await API.get("/classes");
         const subjectRes = await API.get("/subjects");
-        console.log("faculty res:",facultyRes);
-        setTeachers(facultyRes.data);
-        setClasses(classRes.data);
-        setSubjects(subjectRes.data);
+        setTeachers(Array.isArray(facultyRes.data) ? facultyRes.data : []);
+        setClasses(Array.isArray(classRes.data) ? classRes.data : []);
+        setSubjects(Array.isArray(subjectRes.data) ? subjectRes.data : []);
       } catch (err) {
-        console.log("fetch faculty error:",err);
         setError("Failed to fetch teachers.");
+        setTeachers([]);
+        setClasses([]);
+        setSubjects([]);
       }
       setLoading(false);
     };
