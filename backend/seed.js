@@ -1,15 +1,9 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
-import readline from 'readline';
-import Faculty from './models/Faculty.js';
+import Admin from './models/Admin.js'; // Changed from Faculty to Admin
 
 dotenv.config();
-
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout
-});
 
 const connectDB = async () => {
   try {
@@ -28,32 +22,32 @@ const createAdmin = async () => {
   try {
     await connectDB();
 
-    rl.question('Enter admin ID: ', (id) => {
-      rl.question('Enter admin name: ', (name) => {
-        rl.question('Enter admin email: ', (email) => {
-          rl.question('Enter admin password: ', async (password) => {
-            const hashedPassword = await bcrypt.hash(password, 10);
-            const admin = new Faculty({
-              id,
-              name,
-              email,
-              password: hashedPassword,
-              role: 'admin'
-            });
+    const email = 'bmsit0@bmsit.in';
+    const password = 'bmsit';
+    const name = 'Admin';
 
-            try {
-              await admin.save();
-              console.log('Admin user created successfully');
-            } catch (error) {
-              console.error('Error creating admin user:', error.message);
-            } finally {
-              mongoose.connection.close();
-              rl.close();
-            }
-          });
-        });
-      });
+    const existingAdmin = await Admin.findOne({ email });
+    if (existingAdmin) {
+      console.log('Admin user already exists');
+      mongoose.connection.close();
+      return;
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const admin = new Admin({
+      name,
+      email,
+      password: hashedPassword,
     });
+
+    try {
+      await admin.save();
+      console.log('Admin user created successfully');
+    } catch (error) {
+      console.error('Error creating admin user:', error.message);
+    } finally {
+      mongoose.connection.close();
+    }
   } catch (error) {
     console.error('Error:', error.message);
     process.exit(1);

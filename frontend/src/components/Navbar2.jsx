@@ -22,6 +22,9 @@ const Navbar = () => {
         <NavLink to="/classes" className="nav-item">Classes</NavLink>
         <NavLink to="/combos" className="nav-item">Combos</NavLink>
         <NavLink to="/timetable" className="nav-item">Timetable</NavLink>
+        {user && user.role === 'admin' && (
+          <NavLink to="/admin/add" className="nav-item">Add Admin</NavLink>
+        )}
         {user && (
           <button onClick={handleLogout} className="nav-item-logout">
             Logout

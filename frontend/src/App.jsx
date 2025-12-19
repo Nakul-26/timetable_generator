@@ -13,6 +13,7 @@ import Navbar from './components/Navbar2';
 import Login from './pages/Login';
 import { AuthProvider } from './context/AuthContext';
 import PrivateRoute from './components/PrivateRoute';
+import AddAdmin from './pages/admin/AddAdmin'; // Import AddAdmin
 import './App.css';
 
 // Styled homepage
@@ -86,6 +87,7 @@ function App() {
                       <Route path="/class/add" element={<AddClass />} />
                       <Route path="/combo/add" element={<AddCombo />} />
                       <Route path="/combos" element={<ManageCombo />} />
+                      <Route path="/admin/add" element={<AddAdmin />} /> 
                     </Routes>
                   </main>
                 </div>

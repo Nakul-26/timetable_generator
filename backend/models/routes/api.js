@@ -11,6 +11,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import auth from '../../middleware/auth.js';
 import rateLimit from 'express-rate-limit'; // Import rateLimit
+import Admin from '../Admin.js'; // Import Admin model
 
 const router = Router();
 const protectedRouter = Router();
@@ -20,7 +21,7 @@ protectedRouter.use(auth);
 // --- Rate Limiter for login ---
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // limit each IP to 5 login requests per windowMs
+  max: 100, // limit each IP to 5 login requests per windowMs
   message:
     "Too many login attempts from this IP, please try again after 15 minutes",
   standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
@@ -28,32 +29,36 @@ const loginLimiter = rateLimit({
 });
 
 // --- User Authentication ---
-router.post('/register', async (req, res) => {
-  try {
-    const { id, name, email, password, role } = req.body;
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const user = new Faculty({ id, name, email, password: hashedPassword, role });
-    await user.save();
-    res.status(201).json({ message: 'User created successfully' });
-  } catch (error) {
-    res.status(400).json({ error: 'Bad Request' });
-  }
-});
+
 
 router.post('/login', loginLimiter, async (req, res) => {
     try {
         const { email, password } = req.body;
-        const faculty = await Faculty.findOne({ email });
-        if (!faculty) {
-            return res.status(400).json({ success: false, message: 'Invalid credentials' });
+        
+        // Try to find user as Admin
+        let user = await Admin.findOne({ email });
+        console.log("Login attempt for email:", email);
+
+        if (user) {
+            const isMatch = await bcrypt.compare(password, user.password);
+            if (!isMatch) {
+                return res.status(400).json({ success: false, message: 'Invalid credentials 1' });
+            }
+        } else {
+            // If not found as Admin, try to find as Faculty
+            user = await Faculty.findOne({ email });
+            if (!user) {
+                return res.status(400).json({ success: false, message: 'Invalid credentials 2' });
+            }
+            const isMatch = await bcrypt.compare(password, user.password);
+            if (!isMatch) {
+                return res.status(400).json({ success: false, message: 'Invalid credentials 3' });
+            }
         }
-        const isMatch = await bcrypt.compare(password, faculty.password);
-        if (!isMatch) {
-            return res.status(400).json({ success: false, message: 'Invalid credentials' });
-        }
-        const token = jwt.sign({ id: faculty._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+
+        const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
         res.cookie('token', token, { httpOnly: true, secure: true, sameSite: 'none' });
-        res.json({ success: true, user: faculty });
+        res.json({ success: true, user: user });
     } catch (err) {
         res.status(500).json({ success: false, message: 'Internal Server Error' });
     }
@@ -65,6 +70,30 @@ router.post('/logout', (req, res) => {
 
 protectedRouter.get('/me', (req, res) => {
     res.json(req.user);
+});
+
+// Add Admin
+protectedRouter.post('/admins', async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
+
+    // Check if the authenticated user is an admin
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Access denied. Only administrators can create new admins.' });
+    }
+
+    const existingAdmin = await Admin.findOne({ email });
+    if (existingAdmin) {
+      return res.status(400).json({ error: 'Admin with this email already exists.' });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const admin = new Admin({ name, email, password: hashedPassword, role: 'admin' });
+    await admin.save();
+    res.status(201).json({ message: 'Admin created successfully', admin });
+  } catch (error) {
+    res.status(400).json({ error: 'Bad Request', details: error.message });
+  }
 });
 
 // --- Faculties CRUD ---
