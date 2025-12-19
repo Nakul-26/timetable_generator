@@ -23,7 +23,7 @@ const createAdmin = async () => {
     await connectDB();
 
     const email = 'bmsit0@bmsit.in';
-    const password = 'bmsit';
+    const password = '';
     const name = 'Admin';
 
     const existingAdmin = await Admin.findOne({ email });
