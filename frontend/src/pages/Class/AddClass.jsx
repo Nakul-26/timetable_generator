@@ -79,7 +79,7 @@ const AddClass = () => {
         <div className="form-group">
           <label>Semester</label>
           <input
-            type="text"
+            type="number"
             name="semester"
             placeholder="Semester (e.g. Fall)"
             value={semester}

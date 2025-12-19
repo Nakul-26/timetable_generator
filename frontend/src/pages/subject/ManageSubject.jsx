@@ -15,7 +15,7 @@ function ManageSubject() {
   // Edit states
   const [editName, setEditName] = useState("");
   const [editCode, setEditCode] = useState("");
-  const [editSem, setEditSem] = useState("");
+  const [editSem, setEditSem] = useState(0);
   const [editCredits, setEditCredits] = useState("");
   const [editType, setEditType] = useState("");
 
@@ -23,7 +23,7 @@ function ManageSubject() {
   const [showFilters, setShowFilters] = useState(false);
   const [filterName, setFilterName] = useState("");
   const [filterCode, setFilterCode] = useState("");
-  const [filterSem, setFilterSem] = useState("");
+  const [filterSem, setFilterSem] = useState(0);
 
   const navigate = useNavigate();
 
@@ -90,7 +90,7 @@ function ManageSubject() {
       const updatedSubject = {
         name: editName,
         id: editCode,
-        sem: editSem,
+        sem: parseInt(editSem, 10),
         no_of_hours_per_week: editCredits,
         type: editType,
       };
@@ -103,7 +103,7 @@ function ManageSubject() {
       setEditId(null);
       setEditName("");
       setEditCode("");
-      setEditSem("");
+      setEditSem(0);
       setEditCredits("");
       setEditType("theory");
     } catch (err) {
@@ -205,9 +205,9 @@ function ManageSubject() {
                   <td>
                     {editId === subject._id ? (
                       <input
-                        type="text"
+                        type="number"
                         value={editSem}
-                        onChange={(e) => setEditSem(e.target.value)}
+                        onChange={(e) => setEditSem(parseInt(e.target.value, 10))}
                       />
                     ) : (
                       subject.sem

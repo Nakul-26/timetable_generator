@@ -479,7 +479,7 @@ protectedRouter.post('/generate', async (req, res) => {
   console.log("[POST /generate] Generating timetable for user:", req.user._id);
   try {
     const ownerId = req.user._id;
-    const faculties = await Faculty.find().lean(); // Faculties are global
+    const faculties = await Faculty.find({ ownerId }).lean();
     const subjects = await Subject.find({ ownerId }).lean();
     const classes = await ClassModel.find({ ownerId }).lean();
     const combos = await Combo.find({ ownerId }).lean();
@@ -531,7 +531,7 @@ protectedRouter.get('/result/latest', async (req, res) => {
 protectedRouter.post("/result/regenerate", async (req, res) => {
   try {
     const ownerId = req.user._id;
-    const faculties = await Faculty.find().lean(); // Faculties are global
+    const faculties = await Faculty.find({ ownerId }).lean();
     const subjects = await Subject.find({ ownerId }).lean();
     const classes = await ClassModel.find({ ownerId }).lean();
     const combos = await Combo.find({ ownerId }).lean();

@@ -14,7 +14,7 @@ function ManageClass() {
 
   // State variables for editing a class
   const [editName, setEditName] = useState("");
-  const [editSemester, setEditSemester] = useState("");
+  const [editSemester, setEditSemester] = useState(0);
   const [editSection, setEditSection] = useState("");
   const [editClassId, setEditClassId] = useState("");
   const [editDaysPerWeek, setEditDaysPerWeek] = useState(5);
@@ -24,7 +24,7 @@ function ManageClass() {
   const [filterClassId, setFilterClassId] = useState("");
   const [filterName, setFilterName] = useState("");
   const [filterSection, setFilterSection] = useState("");
-  const [filterSemester, setFilterSemester] = useState("");
+  const [filterSemester, setFilterSemester] = useState(0);
 
   const navigate = useNavigate();
 
@@ -113,7 +113,7 @@ function ManageClass() {
       (!filterClassId || c.id.toLowerCase().includes(filterClassId.toLowerCase())) &&
       (!filterName || c.name.toLowerCase().includes(filterName.toLowerCase())) &&
       (!filterSection || c.section.toLowerCase().includes(filterSection.toLowerCase())) &&
-      (!filterSemester || String(c.sem).toLowerCase().includes(filterSemester.toLowerCase()))
+      (!filterSemester || String(c.sem).toLowerCase().includes(filterSemester.toString().toLowerCase()))
     );
   });
 
@@ -121,7 +121,7 @@ function ManageClass() {
     setFilterClassId("");
     setFilterName("");
     setFilterSection("");
-    setFilterSemester("");
+    setFilterSemester(0);
   };
 
   return (
@@ -156,7 +156,7 @@ function ManageClass() {
             onChange={(e) => setFilterSection(e.target.value)}
           />
           <input
-            type="text"
+            type="number"
             placeholder="Search by Semester"
             value={filterSemester}
             onChange={(e) => setFilterSemester(e.target.value)}
@@ -224,7 +224,7 @@ function ManageClass() {
                   <td>
                     {editId === classItem._id ? (
                       <input
-                        type="text"
+                        type="number"
                         value={editSemester}
                         onChange={(e) => setEditSemester(e.target.value)}
                       />
