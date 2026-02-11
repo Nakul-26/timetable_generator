@@ -10,6 +10,7 @@ import mongoose from "mongoose";
 
 dotenv.config();
 const app = express();
+app.set("trust proxy", 1);
 
 
 // --- MongoDB Client ---
@@ -39,14 +40,35 @@ async function connectDB() {
 connectDB();
 
 // --- Middleware ---
+const allowedOrigins = (process.env.CORS_ORIGINS || "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+const defaultOrigins = [
+  "http://localhost:5173",
+  "http://localhost:3000",
+  "https://timetable-generator-3tvm-git-main-nakul-26s-projects.vercel.app",
+  "https://timetable-generator-3tvm.vercel.app",
+];
+
 const corsOptions = {
-  origin: [
-    "http://localhost:5173",
-    "https://timetable-generator-3tvm-git-main-nakul-26s-projects.vercel.app",
-    "https://timetable-generator-3tvm.vercel.app",
-  ],
+  origin: (origin, callback) => {
+    // Allow requests like curl/postman and same-origin server calls.
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    const allowList = [...defaultOrigins, ...allowedOrigins];
+    const isVercelPreview = /^https:\/\/.*\.vercel\.app$/.test(origin);
+    if (allowList.includes(origin) || isVercelPreview) {
+      return callback(null, true);
+    }
+
+    return callback(new Error(`CORS blocked for origin: ${origin}`));
+  },
   optionsSuccessStatus: 200,
-  credentials: true
+  credentials: true,
 };
 app.use(cors(corsOptions));
 app.use(express.json());

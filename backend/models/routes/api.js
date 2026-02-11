@@ -18,6 +18,14 @@ const protectedRouter = Router();
 
 protectedRouter.use(auth);
 
+const isProduction = process.env.NODE_ENV === "production";
+const cookieOptions = {
+  httpOnly: true,
+  secure: isProduction,
+  sameSite: isProduction ? "none" : "lax",
+  maxAge: 60 * 60 * 1000,
+};
+
 // --- Rate Limiter for login ---
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -57,7 +65,7 @@ router.post('/login', loginLimiter, async (req, res) => {
         }
 
         const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
-        res.cookie('token', token, { httpOnly: true, secure: true, sameSite: 'none' });
+        res.cookie('token', token, cookieOptions);
         res.json({ success: true, user: user });
     } catch (err) {
         res.status(500).json({ success: false, message: 'Internal Server Error' });
@@ -65,7 +73,7 @@ router.post('/login', loginLimiter, async (req, res) => {
 });
 
 router.post('/logout', (req, res) => {
-    res.clearCookie('token').json({ success: true });
+    res.clearCookie('token', cookieOptions).json({ success: true });
 });
 
 protectedRouter.get('/me', (req, res) => {
