@@ -7,12 +7,20 @@ export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
 
+    const isValidUser = (candidate) => {
+        return !!candidate && typeof candidate === 'object' && !!candidate._id;
+    };
+
     const checkUser = async () => {
         setLoading(true);
         try {
             const response = await API.get('/me');
-            console.log('AuthContext checkUser response:', response.data);
-            setUser(response.data);
+            const candidateUser = response?.data;
+            if (isValidUser(candidateUser)) {
+                setUser(candidateUser);
+            } else {
+                setUser(null);
+            }
         } catch (error) {
             setUser(null);
         } finally {
@@ -25,7 +33,11 @@ export const AuthProvider = ({ children }) => {
     }, []);
 
     const login = (userData) => {
-        setUser(userData);
+        if (isValidUser(userData)) {
+            setUser(userData);
+        } else {
+            setUser(null);
+        }
     };
 
     const logout = async () => {

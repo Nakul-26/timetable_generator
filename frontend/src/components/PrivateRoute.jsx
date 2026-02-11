@@ -5,17 +5,11 @@ import { useAuth } from '../context/AuthContext';
 const PrivateRoute = () => {
     const { user, loading } = useAuth();
 
-    console.log('PrivateRoute user:', user);
-
     if (loading) {
         return <div>Loading...</div>;
     }
-
-    console.log('PrivateRoute user:', user);
-    console.log('PrivateRoute loading:', loading);
-
-
-    return user && Object.keys(user).length > 0 ? <Outlet /> : <Navigate to="/login" />;
+    const isAuthenticated = !!user && typeof user === 'object' && !!user._id;
+    return isAuthenticated ? <Outlet /> : <Navigate to="/login" replace />;
 };
 
 export default PrivateRoute;
