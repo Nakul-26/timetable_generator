@@ -37,7 +37,7 @@ function Timetable() {
       setClasses(Array.isArray(classRes.data) ? classRes.data : []);
       setFaculties(Array.isArray(facRes.data) ? facRes.data : []);
       setSubjects(Array.isArray(subRes.data) ? subRes.data : []);
-    } catch (err) {
+    } catch {
       setError("Failed to fetch data.");
       // Also reset states to empty arrays in case of error
       setClassCombos([]);
@@ -182,7 +182,7 @@ function Timetable() {
       const res = await api.get("/result/latest");
       setTimetable(res.data);
       setBestScore(res.data?.score || null);
-    } catch (e) {
+    } catch {
       setError("Failed to fetch timetable");
     }
     setLoading(false);
@@ -232,21 +232,6 @@ function Timetable() {
   const getSubjectName = (id) => {
     const sub = subjects.find((s) => String(s._id) === String(id));
     return sub ? `${sub.name} (${sub.id})` : id;
-  };
-
-  const toggleFixedSlot = (classId, dayIdx, periodIdx, comboId) => {
-    console.log("Toggling fixed slot:", classId, dayIdx, periodIdx, comboId);
-    setFixedSlots((prev) => {
-      const copy = { ...prev };
-      if (!copy[classId]) copy[classId] = {};
-      if (!copy[classId][dayIdx]) copy[classId][dayIdx] = {};
-      if (copy[classId][dayIdx][periodIdx] === comboId) {
-        delete copy[classId][dayIdx][periodIdx];
-      } else {
-        copy[classId][dayIdx][periodIdx] = comboId;
-      }
-      return copy;
-    });
   };
 
   const renderClassTable = (classId, slots) => {
@@ -338,6 +323,121 @@ function Timetable() {
     setSelectedSubject("");
   };
 
+  const getFilteredRowsForDownload = () => {
+    if (!timetable?.class_timetables) return [];
+
+    const rows = [];
+    const entries = Object.entries(timetable.class_timetables);
+    const classEntries = selectedClass
+      ? entries.filter(([classId]) => classId === selectedClass)
+      : entries;
+
+    classEntries.forEach(([classId, slots]) => {
+      slots.forEach((dayRow, dayIdx) => {
+        dayRow.forEach((slotId, periodIdx) => {
+          if (slotId === -1) return;
+
+          const combo = classCombos.find((c) => c._id === slotId);
+          if (!combo) return;
+
+          if (
+            (selectedFaculty && combo.faculty_id !== selectedFaculty) ||
+            (selectedSubject && combo.subject_id !== selectedSubject)
+          ) {
+            return;
+          }
+
+          rows.push({
+            className: getClassName(classId),
+            day: dayIdx + 1,
+            period: periodIdx + 1,
+            subject: getSubjectName(combo.subject_id),
+            faculty: getFacultyName(combo.faculty_id),
+          });
+        });
+      });
+    });
+
+    return rows;
+  };
+
+  const escapeCsv = (value) => {
+    const text = String(value ?? "");
+    if (text.includes('"') || text.includes(",") || text.includes("\n")) {
+      return `"${text.replace(/"/g, '""')}"`;
+    }
+    return text;
+  };
+
+  const downloadRowsAsCsv = (rows, filename) => {
+    if (!rows.length) {
+      setError("No timetable rows to download for the selected view.");
+      return;
+    }
+
+    const headers = ["Class", "Day", "Period", "Subject", "Faculty"];
+    const lines = [
+      headers.join(","),
+      ...rows.map((row) =>
+        [
+          escapeCsv(row.className),
+          row.day,
+          row.period,
+          escapeCsv(row.subject),
+          escapeCsv(row.faculty),
+        ].join(",")
+      ),
+    ];
+
+    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadAll = () => {
+    if (!timetable?.class_timetables) {
+      setError("Generate or fetch a timetable before downloading.");
+      return;
+    }
+
+    const rows = Object.entries(timetable.class_timetables).flatMap(([classId, slots]) =>
+      slots.flatMap((dayRow, dayIdx) =>
+        dayRow
+          .map((slotId, periodIdx) => ({ slotId, periodIdx }))
+          .filter(({ slotId }) => slotId !== -1)
+          .map(({ slotId, periodIdx }) => {
+            const combo = classCombos.find((c) => c._id === slotId);
+            if (!combo) return null;
+            return {
+              className: getClassName(classId),
+              day: dayIdx + 1,
+              period: periodIdx + 1,
+              subject: getSubjectName(combo.subject_id),
+              faculty: getFacultyName(combo.faculty_id),
+            };
+          })
+          .filter(Boolean)
+      )
+    );
+
+    downloadRowsAsCsv(rows, "timetable_all.csv");
+  };
+
+  const handleDownloadFiltered = () => {
+    if (!timetable?.class_timetables) {
+      setError("Generate or fetch a timetable before downloading.");
+      return;
+    }
+    const rows = getFilteredRowsForDownload();
+    downloadRowsAsCsv(rows, "timetable_filtered.csv");
+  };
+
   return (
     <div className="manage-container">
       <h2>Timetable Generator</h2>
@@ -357,6 +457,12 @@ function Timetable() {
         </button>
         <button className="secondary-btn" onClick={deleteAllTimetables} disabled={loading}>
           Delete All Timetables
+        </button>
+        <button className="secondary-btn" onClick={handleDownloadAll} disabled={loading || !timetable}>
+          Download Timetable
+        </button>
+        <button className="secondary-btn" onClick={handleDownloadFiltered} disabled={loading || !timetable}>
+          Download Filtered
         </button>
       </div>
 
