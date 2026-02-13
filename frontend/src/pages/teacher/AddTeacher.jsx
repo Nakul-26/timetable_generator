@@ -4,9 +4,12 @@ import axios from "../../api/axios";
 const AddTeacher = () => {
   const [name, setName] = useState("");
   const [facultyId, setFacultyId] = useState("");
+  const [uploadFile, setUploadFile] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [uploadFailures, setUploadFailures] = useState([]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -33,7 +36,7 @@ const AddTeacher = () => {
 
     setLoading(true);
     try {
-      const res = await axios.post(`/faculties`, {
+      await axios.post(`/faculties`, {
         name: name,
         id: facultyId,
       });
@@ -52,6 +55,113 @@ const AddTeacher = () => {
       setError("Failed to add teacher.");
     }
     setLoading(false);
+  };
+
+  const arrayBufferToBase64 = (buffer) => {
+    let binary = "";
+    const bytes = new Uint8Array(buffer);
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.subarray(i, i + chunkSize);
+      binary += String.fromCharCode(...chunk);
+    }
+    return btoa(binary);
+  };
+
+  const handleUpload = async () => {
+    if (!uploadFile) {
+      setError("Please choose an Excel file first.");
+      setSuccess("");
+      setUploadFailures([]);
+      return;
+    }
+
+    setUploading(true);
+    setError("");
+    setSuccess("");
+    setUploadFailures([]);
+    try {
+      const buffer = await uploadFile.arrayBuffer();
+      const base64 = arrayBufferToBase64(buffer);
+      const res = await axios.post("/faculties/bulk-upload", {
+        fileData: base64,
+      });
+
+      console.log("[Bulk Upload Response]", res);
+
+      const {
+        insertedCount = 0,
+        totalRows = 0,
+        duplicateInDatabase = [],
+        duplicateInFile = [],
+        invalidRows = [],
+      } = res.data || {};
+
+      const failures = [
+        ...duplicateInDatabase.map((item) => ({
+          id: item.id || "-",
+          row: item.row || "-",
+          reason: item.reason || "ID already exists",
+        })),
+        ...duplicateInFile.map((item) => ({
+          id: item.id || "-",
+          row: item.row || "-",
+          reason: item.reason || "Duplicate ID in upload file",
+        })),
+        ...invalidRows.map((item) => ({
+          id: item.id || "-",
+          row: item.row || "-",
+          reason: item.reason || "Invalid row",
+        })),
+      ];
+
+      const skipped = failures.length;
+      const inserted = insertedCount || 0;
+      if (skipped > 0 && inserted > 0) {
+        setError(
+          `Uploaded partially. Inserted ${inserted} of ${totalRows} rows. Failed ${skipped} rows.`
+        );
+      } else if (skipped > 0 && inserted === 0) {
+        setError(`Upload failed. Failed ${skipped} of ${totalRows} rows.`);
+      } else {
+        setSuccess(`Upload complete. Inserted ${inserted} of ${totalRows} rows.`);
+      }
+      setUploadFailures(failures);
+      setUploadFile(null);
+    } catch (err) {
+      setError(
+        err?.response?.data?.details
+          ? `${err?.response?.data?.error} (${err?.response?.data?.details})`
+          : err?.response?.data?.error || "Failed to upload Excel file."
+      );
+      setUploadFailures([]);
+    }
+    setUploading(false);
+  };
+
+  const handleDownloadTemplate = async () => {
+    setError("");
+    setSuccess("");
+    try {
+      const response = await axios.get("/faculties/template", {
+        responseType: "arraybuffer",
+      });
+
+      const blob = new Blob([response.data], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "faculty-template.xlsx";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      setSuccess("Template downloaded successfully.");
+    } catch {
+      setError("Failed to download template.");
+    }
   };
 
   return (
@@ -84,8 +194,58 @@ const AddTeacher = () => {
           {loading ? "Adding..." : "Add Teacher"}
         </button>
       </form>
+      <div className="styled-form" style={{ marginTop: "16px" }}>
+        <h3>Bulk Upload (Excel)</h3>
+        <p>Use columns: Name and ID (or Faculty ID) in the first sheet.</p>
+        <button
+          type="button"
+          className="secondary-btn"
+          onClick={handleDownloadTemplate}
+          style={{ marginBottom: "12px" }}
+        >
+          Download Empty Template
+        </button>
+        <div className="form-group">
+          <input
+            type="file"
+            accept=".xlsx,.xls"
+            onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+          />
+        </div>
+        <button
+          type="button"
+          disabled={uploading}
+          className="primary-btn"
+          onClick={handleUpload}
+        >
+          {uploading ? "Uploading..." : "Upload Excel"}
+        </button>
+      </div>
       {error && <div className="error-message">{error}</div>}
       {success && <div className="success-message">{success}</div>}
+      {uploadFailures.length > 0 && (
+        <div className="styled-form" style={{ marginTop: "12px" }}>
+          <h3>Failed Rows</h3>
+          <table className="styled-table">
+            <thead>
+              <tr>
+                <th>Row</th>
+                <th>ID</th>
+                <th>Reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              {uploadFailures.map((item, index) => (
+                <tr key={`${item.row}-${item.id}-${index}`}>
+                  <td>{item.row}</td>
+                  <td>{item.id}</td>
+                  <td>{item.reason}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 };

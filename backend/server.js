@@ -30,7 +30,7 @@ const client = new MongoClient(uri, {
 async function connectDB() {
   try {
     await client.connect();
-    await client.db("admin").command({ ping: 1 });
+    await client.db("test2").command({ ping: 1 });
     console.log("✅ Connected to MongoDB via MongoClient");
   } catch (err) {
     console.error("❌ MongoDB connection error:", err);
@@ -71,7 +71,7 @@ const corsOptions = {
   credentials: true,
 };
 app.use(cors(corsOptions));
-app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
 app.use(cookieParser());
 
 

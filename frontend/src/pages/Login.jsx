@@ -13,16 +13,23 @@ const Login = () => {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        setError('');
         try {
             const response = await API.post('/login', { email, password });
+            const user = response?.data?.user;
             if (response.data.success) {
-                login(response.data.user);
+                if (user?.role !== 'admin') {
+                    await API.post('/logout');
+                    setError('Only admins are allowed to log in.');
+                    return;
+                }
+                login(user);
                 navigate('/timetable');
             } else {
                 setError(response.data.message);
             }
         } catch (err) {
-            setError('An error occurred. Please try again later.');
+            setError(err?.response?.data?.message || 'An error occurred. Please try again later.');
         }
     };
 

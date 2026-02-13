@@ -12,6 +12,7 @@ import jwt from 'jsonwebtoken';
 import auth from '../../middleware/auth.js';
 import rateLimit from 'express-rate-limit'; // Import rateLimit
 import Admin from '../Admin.js'; // Import Admin model
+import xlsx from 'xlsx';
 
 const router = Router();
 const protectedRouter = Router();
@@ -42,26 +43,16 @@ const loginLimiter = rateLimit({
 router.post('/login', loginLimiter, async (req, res) => {
     try {
         const { email, password } = req.body;
-        
-        // Try to find user as Admin
-        let user = await Admin.findOne({ email });
-        console.log("Login attempt for email:", email);
+        console.log("Admin login attempt for email:", email);
 
-        if (user) {
-            const isMatch = await bcrypt.compare(password, user.password);
-            if (!isMatch) {
-                return res.status(400).json({ success: false, message: 'Invalid credentials 1' });
-            }
-        } else {
-            // If not found as Admin, try to find as Faculty
-            user = await Faculty.findOne({ email });
-            if (!user) {
-                return res.status(400).json({ success: false, message: 'Invalid credentials 2' });
-            }
-            const isMatch = await bcrypt.compare(password, user.password);
-            if (!isMatch) {
-                return res.status(400).json({ success: false, message: 'Invalid credentials 3' });
-            }
+        const user = await Admin.findOne({ email });
+        if (!user) {
+            return res.status(400).json({ success: false, message: 'Invalid credentials' });
+        }
+
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
+            return res.status(400).json({ success: false, message: 'Invalid credentials' });
         }
 
         const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
@@ -121,6 +112,143 @@ protectedRouter.post('/faculties', async (req, res) => {
       return res.status(400).json({ error: 'A faculty with this ID already exists for you.' });
     }
     res.status(400).json({ error: 'Bad Request' });
+  }
+});
+
+// Download empty faculty Excel template
+protectedRouter.get('/faculties/template', async (req, res) => {
+  try {
+    const workbook = xlsx.utils.book_new();
+    const sheet = xlsx.utils.json_to_sheet([], {
+      header: ['Name', 'Faculty ID'],
+    });
+    xlsx.utils.book_append_sheet(workbook, sheet, 'Faculties');
+
+    const fileBuffer = xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
+    res.setHeader('Content-Disposition', 'attachment; filename="faculty-template.xlsx"');
+    return res.send(fileBuffer);
+  } catch (e) {
+    return res.status(500).json({ error: 'Failed to generate template file.' });
+  }
+});
+
+// Bulk upload faculties from Excel (.xlsx/.xls)
+protectedRouter.post('/faculties/bulk-upload', async (req, res) => {
+  try {
+    const { fileData } = req.body;
+    if (!fileData) {
+      return res.status(400).json({ error: 'fileData is required (base64-encoded Excel file).' });
+    }
+
+    const cleanedBase64 = String(fileData).includes(',')
+      ? String(fileData).split(',').pop()
+      : String(fileData);
+    const buffer = Buffer.from(cleanedBase64, 'base64');
+    const workbook = xlsx.read(buffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    if (!sheetName) {
+      return res.status(400).json({ error: 'No sheet found in uploaded file.' });
+    }
+
+    const sheet = workbook.Sheets[sheetName];
+    const rows = xlsx.utils.sheet_to_json(sheet, { defval: '' });
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return res.status(400).json({ error: 'Uploaded sheet is empty.' });
+    }
+
+    const getValueByKey = (row, aliases) => {
+      const keyMap = Object.keys(row).reduce((acc, key) => {
+        acc[key.trim().toLowerCase()] = key;
+        return acc;
+      }, {});
+      for (const alias of aliases) {
+        const matched = keyMap[alias];
+        if (matched !== undefined) {
+          return row[matched];
+        }
+      }
+      return '';
+    };
+
+    const normalized = rows.map((row, index) => {
+      const name = String(getValueByKey(row, ['name', 'faculty name', 'teacher name']) || '').trim();
+      const id = String(getValueByKey(row, ['id', 'faculty id', 'facultyid', 'teacher id']) || '').trim();
+      return { row: index + 2, name, id }; // +2 accounts for header row + 1-based indexing
+    });
+
+    const invalidRows = normalized
+      .filter((item) => !item.name || !item.id)
+      .map((item) => ({ row: item.row, reason: 'Missing name or id' }));
+
+    const validRows = normalized.filter((item) => item.name && item.id);
+    if (validRows.length === 0) {
+      return res.status(400).json({
+        error: 'No valid faculty rows found. Required columns: Name and ID (or Faculty ID).',
+        invalidRows,
+      });
+    }
+
+    const seenIds = new Set();
+    const duplicateInFile = [];
+    const uniqueValidRows = [];
+    for (const item of validRows) {
+      const normalizedId = item.id.toLowerCase();
+      if (seenIds.has(normalizedId)) {
+        duplicateInFile.push({ row: item.row, id: item.id, reason: 'Duplicate ID in upload file' });
+        continue;
+      }
+      seenIds.add(normalizedId);
+      uniqueValidRows.push(item);
+    }
+
+    const existingFaculties = await Faculty.find({
+      ownerId: req.user._id,
+      id: { $in: uniqueValidRows.map((item) => item.id) },
+    }).select('id').lean();
+    const existingIdSet = new Set(existingFaculties.map((f) => String(f.id).toLowerCase()));
+
+    const docsToInsert = uniqueValidRows.filter((item) => !existingIdSet.has(item.id.toLowerCase()));
+    let insertedCount = 0;
+    if (docsToInsert.length > 0) {
+      const operations = docsToInsert.map((item) => ({
+        updateOne: {
+          filter: { ownerId: req.user._id, id: item.id },
+          update: {
+            $setOnInsert: {
+              name: item.name,
+              id: item.id,
+              role: 'faculty',
+              ownerId: req.user._id,
+            },
+          },
+          upsert: true,
+        },
+      }));
+      const result = await Faculty.bulkWrite(operations, { ordered: false });
+      insertedCount = result.upsertedCount || 0;
+    }
+
+    res.status(201).json({
+      message: 'Faculty upload processed.',
+      totalRows: rows.length,
+      validRows: validRows.length,
+      insertedCount,
+      skippedCount: rows.length - insertedCount,
+      invalidRows,
+      duplicateInFile,
+      duplicateInDatabase: uniqueValidRows
+        .filter((item) => existingIdSet.has(item.id.toLowerCase()))
+        .map((item) => ({ row: item.row, id: item.id, reason: 'ID already exists' })),
+    });
+  } catch (e) {
+    res.status(400).json({
+      error: 'Failed to process uploaded file.',
+      details: e?.message || 'Unknown error',
+    });
   }
 });
 
