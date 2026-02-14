@@ -164,133 +164,135 @@ function ManageSubject() {
       ) : error ? (
         <div className="error-message">{error}</div>
       ) : (
-        <table className="styled-table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Code</th>
-              <th>Semester</th>
-              <th>Credits</th>
-              <th>Subject Type</th>
-              <th>Assigned Class-Faculty</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {Array.isArray(filteredSubjects) &&
-              filteredSubjects.map((subject) => (
-                <tr key={subject._id}>
-                  <td>
-                    {editId === subject._id ? (
-                      <input
-                        type="text"
-                        value={editName}
-                        onChange={(e) => setEditName(e.target.value)}
-                      />
-                    ) : (
-                      subject.name
-                    )}
-                  </td>
-                  <td>
-                    {editId === subject._id ? (
-                      <input
-                        type="text"
-                        value={editCode}
-                        onChange={(e) => setEditCode(e.target.value)}
-                      />
-                    ) : (
-                      subject.id
-                    )}
-                  </td>
-                  <td>
-                    {editId === subject._id ? (
-                      <input
-                        type="number"
-                        value={editSem}
-                        onChange={(e) => setEditSem(parseInt(e.target.value, 10))}
-                      />
-                    ) : (
-                      subject.sem
-                    )}
-                  </td>
-                  <td>
-                    {editId === subject._id ? (
-                      <input
-                        type="number"
-                        value={editCredits}
-                        onChange={(e) => setEditCredits(e.target.value)}
-                      />
-                    ) : (
-                      subject.no_of_hours_per_week
-                    )}
-                  </td>
-                  <td>
-                    {editId === subject._id ? (
-                      <select
-                        value={editType}
-                        onChange={(e) => setEditType(e.target.value)}
-                        required
-                      >
-                        <option value="theory">Theory</option>
-                        <option value="lab">Lab</option>
-                      </select>
-                    ) : (
-                      subject.type
-                    )}
-                  </td>
-                  <td>
-                    {combos
-                      .filter(c => c.subject_id === subject._id) // get combos for teacher
-                      .map(c => {
-                        const cls = classes.find(cls => cls._id === c.class_id);
-                        const fac = teachers.find(fac => fac._id === c.faculty_id);
+        <div className="table-responsive">
+          <table className="styled-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Code</th>
+                <th>Semester</th>
+                <th>Credits</th>
+                <th>Subject Type</th>
+                <th>Assigned Class-Faculty</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Array.isArray(filteredSubjects) &&
+                filteredSubjects.map((subject) => (
+                  <tr key={subject._id}>
+                    <td>
+                      {editId === subject._id ? (
+                        <input
+                          type="text"
+                          value={editName}
+                          onChange={(e) => setEditName(e.target.value)}
+                        />
+                      ) : (
+                        subject.name
+                      )}
+                    </td>
+                    <td>
+                      {editId === subject._id ? (
+                        <input
+                          type="text"
+                          value={editCode}
+                          onChange={(e) => setEditCode(e.target.value)}
+                        />
+                      ) : (
+                        subject.id
+                      )}
+                    </td>
+                    <td>
+                      {editId === subject._id ? (
+                        <input
+                          type="number"
+                          value={editSem}
+                          onChange={(e) => setEditSem(parseInt(e.target.value, 10))}
+                        />
+                      ) : (
+                        subject.sem
+                      )}
+                    </td>
+                    <td>
+                      {editId === subject._id ? (
+                        <input
+                          type="number"
+                          value={editCredits}
+                          onChange={(e) => setEditCredits(e.target.value)}
+                        />
+                      ) : (
+                        subject.no_of_hours_per_week
+                      )}
+                    </td>
+                    <td>
+                      {editId === subject._id ? (
+                        <select
+                          value={editType}
+                          onChange={(e) => setEditType(e.target.value)}
+                          required
+                        >
+                          <option value="theory">Theory</option>
+                          <option value="lab">Lab</option>
+                        </select>
+                      ) : (
+                        subject.type
+                      )}
+                    </td>
+                    <td>
+                      {combos
+                        .filter(c => c.subject_id === subject._id) // get combos for teacher
+                        .map(c => {
+                          const cls = classes.find(cls => cls._id === c.class_id);
+                          const fac = teachers.find(fac => fac._id === c.faculty_id);
 
-                        return (
-                          <div key={`${c.class_id}-${c.faculty_id}`}>
-                            <p>
-                              Class: {cls?.name || "Unknown"} - Faculty: {fac?.name || "Unknown"} ({fac.id})
-                            </p>
-                          </div>
-                        );
-                      })}
-                  </td>
-                  <td>
-                    {editId === subject._id ? (
-                      <>
-                        <button
-                          onClick={handleEditSubmit}
-                          className="primary-btn"
-                        >
-                          Save
-                        </button>
-                        <button
-                          onClick={() => setEditId(null)}
-                          className="secondary-btn"
-                        >
-                          Cancel
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          onClick={() => handleEdit(subject)}
-                          className="primary-btn"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => handleDelete(subject._id)}
-                          className="danger-btn"
-                        >
-                          Delete
-                        </button>
-                      </>
-                    )}
-                  </td>
-                </tr>
-              ))}
-          </tbody>
-        </table>
+                          return (
+                            <div key={`${c.class_id}-${c.faculty_id}`}>
+                              <p>
+                                Class: {cls?.name || "Unknown"} - Faculty: {fac?.name || "Unknown"} ({fac.id})
+                              </p>
+                            </div>
+                          );
+                        })}
+                    </td>
+                    <td>
+                      {editId === subject._id ? (
+                        <>
+                          <button
+                            onClick={handleEditSubmit}
+                            className="primary-btn"
+                          >
+                            Save
+                          </button>
+                          <button
+                            onClick={() => setEditId(null)}
+                            className="secondary-btn"
+                          >
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => handleEdit(subject)}
+                            className="primary-btn"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handleDelete(subject._id)}
+                            className="danger-btn"
+                          >
+                            Delete
+                          </button>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

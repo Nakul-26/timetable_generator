@@ -73,6 +73,7 @@ function Timetable() {
         <h3>
           Class: {cls?.sem} {cls?.section}
         </h3>
+        <div className="table-responsive">
         <table className="styled-table">
           <thead>
             <tr>
@@ -129,6 +130,7 @@ function Timetable() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     );
   };
@@ -240,6 +242,7 @@ function Timetable() {
         <h3 style={{ marginBottom: "10px" }}>
           Class: {getClassName(classId)}
         </h3>
+        <div className="table-responsive">
         <table className="styled-table">
           <thead>
             <tr>
@@ -302,6 +305,7 @@ function Timetable() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     );
   };

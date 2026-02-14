@@ -331,6 +331,190 @@ protectedRouter.post('/subjects', async (req, res) => {
   }
 });
 
+// Download empty subject Excel template
+protectedRouter.get('/subjects/template', async (req, res) => {
+  try {
+    const workbook = xlsx.utils.book_new();
+    const sheet = xlsx.utils.json_to_sheet([], {
+      header: ['Name', 'Subject Code', 'Semester', 'Credits', 'Type'],
+    });
+    xlsx.utils.book_append_sheet(workbook, sheet, 'Subjects');
+
+    const fileBuffer = xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
+    res.setHeader('Content-Disposition', 'attachment; filename="subject-template.xlsx"');
+    return res.send(fileBuffer);
+  } catch (e) {
+    return res.status(500).json({ error: 'Failed to generate template file.' });
+  }
+});
+
+// Bulk upload subjects from Excel (.xlsx/.xls)
+protectedRouter.post('/subjects/bulk-upload', async (req, res) => {
+  try {
+    const { fileData } = req.body;
+    if (!fileData) {
+      return res.status(400).json({ error: 'fileData is required (base64-encoded Excel file).' });
+    }
+
+    const cleanedBase64 = String(fileData).includes(',')
+      ? String(fileData).split(',').pop()
+      : String(fileData);
+    const buffer = Buffer.from(cleanedBase64, 'base64');
+    const workbook = xlsx.read(buffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    if (!sheetName) {
+      return res.status(400).json({ error: 'No sheet found in uploaded file.' });
+    }
+
+    const sheet = workbook.Sheets[sheetName];
+    const rows = xlsx.utils.sheet_to_json(sheet, { defval: '' });
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return res.status(400).json({ error: 'Uploaded sheet is empty.' });
+    }
+
+    const getValueByKey = (row, aliases) => {
+      const keyMap = Object.keys(row).reduce((acc, key) => {
+        acc[key.trim().toLowerCase()] = key;
+        return acc;
+      }, {});
+      for (const alias of aliases) {
+        const matched = keyMap[alias];
+        if (matched !== undefined) {
+          return row[matched];
+        }
+      }
+      return '';
+    };
+
+    const toNumberOrNaN = (value) => {
+      const parsed = Number(String(value).trim());
+      return Number.isFinite(parsed) ? parsed : NaN;
+    };
+
+    const normalized = rows.map((row, index) => {
+      const name = String(getValueByKey(row, ['name', 'subject name']) || '').trim();
+      const id = String(getValueByKey(row, ['id', 'subject code', 'subject id', 'code']) || '').trim();
+      const semRaw = getValueByKey(row, ['semester', 'sem']);
+      const creditsRaw = getValueByKey(row, ['credits', 'no_of_hours_per_week', 'hours per week', 'hours']);
+      const typeRaw = String(getValueByKey(row, ['type', 'subject type']) || 'theory')
+        .trim()
+        .toLowerCase();
+      const sem = toNumberOrNaN(semRaw);
+      const no_of_hours_per_week = toNumberOrNaN(creditsRaw);
+      const type = typeRaw || 'theory';
+      return {
+        row: index + 2,
+        name,
+        id,
+        sem,
+        no_of_hours_per_week,
+        type,
+      };
+    });
+
+    const invalidRows = normalized
+      .filter((item) => {
+        if (!item.name || !item.id) return true;
+        if (!Number.isFinite(item.sem) || !Number.isFinite(item.no_of_hours_per_week)) return true;
+        if (!['theory', 'lab'].includes(item.type)) return true;
+        return false;
+      })
+      .map((item) => {
+        let reason = 'Invalid row';
+        if (!item.name || !item.id) {
+          reason = 'Missing name or subject code';
+        } else if (!Number.isFinite(item.sem)) {
+          reason = 'Invalid semester';
+        } else if (!Number.isFinite(item.no_of_hours_per_week)) {
+          reason = 'Invalid credits';
+        } else if (!['theory', 'lab'].includes(item.type)) {
+          reason = 'Invalid type (must be theory or lab)';
+        }
+        return { row: item.row, id: item.id || '-', reason };
+      });
+
+    const validRows = normalized.filter(
+      (item) =>
+        item.name &&
+        item.id &&
+        Number.isFinite(item.sem) &&
+        Number.isFinite(item.no_of_hours_per_week) &&
+        ['theory', 'lab'].includes(item.type)
+    );
+
+    if (validRows.length === 0) {
+      return res.status(400).json({
+        error: 'No valid subject rows found. Required columns: Name, Subject Code, Semester, Credits, Type.',
+        invalidRows,
+      });
+    }
+
+    const seenIds = new Set();
+    const duplicateInFile = [];
+    const uniqueValidRows = [];
+    for (const item of validRows) {
+      const normalizedId = item.id.toLowerCase();
+      if (seenIds.has(normalizedId)) {
+        duplicateInFile.push({ row: item.row, id: item.id, reason: 'Duplicate ID in upload file' });
+        continue;
+      }
+      seenIds.add(normalizedId);
+      uniqueValidRows.push(item);
+    }
+
+    const existingSubjects = await Subject.find({
+      ownerId: req.user._id,
+      id: { $in: uniqueValidRows.map((item) => item.id) },
+    }).select('id').lean();
+    const existingIdSet = new Set(existingSubjects.map((s) => String(s.id).toLowerCase()));
+
+    const docsToInsert = uniqueValidRows.filter((item) => !existingIdSet.has(item.id.toLowerCase()));
+    let insertedCount = 0;
+    if (docsToInsert.length > 0) {
+      const operations = docsToInsert.map((item) => ({
+        updateOne: {
+          filter: { ownerId: req.user._id, id: item.id },
+          update: {
+            $setOnInsert: {
+              name: item.name,
+              id: item.id,
+              sem: item.sem,
+              no_of_hours_per_week: item.no_of_hours_per_week,
+              type: item.type,
+              ownerId: req.user._id,
+            },
+          },
+          upsert: true,
+        },
+      }));
+      const result = await Subject.bulkWrite(operations, { ordered: false });
+      insertedCount = result.upsertedCount || 0;
+    }
+
+    res.status(201).json({
+      message: 'Subject upload processed.',
+      totalRows: rows.length,
+      validRows: validRows.length,
+      insertedCount,
+      skippedCount: rows.length - insertedCount,
+      invalidRows,
+      duplicateInFile,
+      duplicateInDatabase: uniqueValidRows
+        .filter((item) => existingIdSet.has(item.id.toLowerCase()))
+        .map((item) => ({ row: item.row, id: item.id, reason: 'ID already exists' })),
+    });
+  } catch (e) {
+    res.status(400).json({
+      error: 'Failed to process uploaded file.',
+      details: e?.message || 'Unknown error',
+    });
+  }
+});
+
 // Get all subjects for the current user
 protectedRouter.get('/subjects', async (req, res) => {
   console.log("[GET /subjects] Fetching all subjects for user:", req.user._id);
@@ -405,6 +589,187 @@ protectedRouter.post('/classes', async (req, res) => {
       return res.status(400).json({ error: 'A class with this ID already exists.' });
     }
     res.status(400).json({ error: 'Bad Request' });
+  }
+});
+
+// Download empty class Excel template
+protectedRouter.get('/classes/template', async (req, res) => {
+  try {
+    const workbook = xlsx.utils.book_new();
+    const sheet = xlsx.utils.json_to_sheet([], {
+      header: ['Class ID', 'Name', 'Semester', 'Section', 'Days Per Week'],
+    });
+    xlsx.utils.book_append_sheet(workbook, sheet, 'Classes');
+
+    const fileBuffer = xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
+    res.setHeader('Content-Disposition', 'attachment; filename="class-template.xlsx"');
+    return res.send(fileBuffer);
+  } catch (e) {
+    return res.status(500).json({ error: 'Failed to generate template file.' });
+  }
+});
+
+// Bulk upload classes from Excel (.xlsx/.xls)
+protectedRouter.post('/classes/bulk-upload', async (req, res) => {
+  try {
+    const { fileData } = req.body;
+    if (!fileData) {
+      return res.status(400).json({ error: 'fileData is required (base64-encoded Excel file).' });
+    }
+
+    const cleanedBase64 = String(fileData).includes(',')
+      ? String(fileData).split(',').pop()
+      : String(fileData);
+    const buffer = Buffer.from(cleanedBase64, 'base64');
+    const workbook = xlsx.read(buffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    if (!sheetName) {
+      return res.status(400).json({ error: 'No sheet found in uploaded file.' });
+    }
+
+    const sheet = workbook.Sheets[sheetName];
+    const rows = xlsx.utils.sheet_to_json(sheet, { defval: '' });
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return res.status(400).json({ error: 'Uploaded sheet is empty.' });
+    }
+
+    const getValueByKey = (row, aliases) => {
+      const keyMap = Object.keys(row).reduce((acc, key) => {
+        acc[key.trim().toLowerCase()] = key;
+        return acc;
+      }, {});
+      for (const alias of aliases) {
+        const matched = keyMap[alias];
+        if (matched !== undefined) {
+          return row[matched];
+        }
+      }
+      return '';
+    };
+
+    const toNumberOrNaN = (value) => {
+      const parsed = Number(String(value).trim());
+      return Number.isFinite(parsed) ? parsed : NaN;
+    };
+
+    const normalized = rows.map((row, index) => {
+      const id = String(getValueByKey(row, ['id', 'class id', 'classid']) || '').trim();
+      const name = String(getValueByKey(row, ['name', 'class name']) || '').trim();
+      const section = String(getValueByKey(row, ['section']) || '').trim();
+      const sem = toNumberOrNaN(getValueByKey(row, ['semester', 'sem']));
+      const daysRaw = getValueByKey(row, ['days per week', 'days_per_week', 'days']);
+      const parsedDays = toNumberOrNaN(daysRaw);
+      const days_per_week = Number.isFinite(parsedDays) ? parsedDays : 5;
+
+      return {
+        row: index + 2,
+        id,
+        name,
+        section,
+        sem,
+        days_per_week,
+      };
+    });
+
+    const invalidRows = normalized
+      .filter((item) => {
+        if (!item.id || !item.name || !item.section) return true;
+        if (!Number.isFinite(item.sem) || !Number.isFinite(item.days_per_week)) return true;
+        return false;
+      })
+      .map((item) => {
+        let reason = 'Invalid row';
+        if (!item.id || !item.name || !item.section) {
+          reason = 'Missing class id, name, or section';
+        } else if (!Number.isFinite(item.sem)) {
+          reason = 'Invalid semester';
+        } else if (!Number.isFinite(item.days_per_week)) {
+          reason = 'Invalid days per week';
+        }
+        return { row: item.row, id: item.id || '-', reason };
+      });
+
+    const validRows = normalized.filter(
+      (item) =>
+        item.id &&
+        item.name &&
+        item.section &&
+        Number.isFinite(item.sem) &&
+        Number.isFinite(item.days_per_week)
+    );
+
+    if (validRows.length === 0) {
+      return res.status(400).json({
+        error: 'No valid class rows found. Required columns: Class ID, Name, Semester, Section, Days Per Week.',
+        invalidRows,
+      });
+    }
+
+    const seenIds = new Set();
+    const duplicateInFile = [];
+    const uniqueValidRows = [];
+    for (const item of validRows) {
+      const normalizedId = item.id.toLowerCase();
+      if (seenIds.has(normalizedId)) {
+        duplicateInFile.push({ row: item.row, id: item.id, reason: 'Duplicate ID in upload file' });
+        continue;
+      }
+      seenIds.add(normalizedId);
+      uniqueValidRows.push(item);
+    }
+
+    const existingClasses = await ClassModel.find({
+      ownerId: req.user._id,
+      id: { $in: uniqueValidRows.map((item) => item.id) },
+    }).select('id').lean();
+    const existingIdSet = new Set(existingClasses.map((c) => String(c.id).toLowerCase()));
+
+    const docsToInsert = uniqueValidRows.filter((item) => !existingIdSet.has(item.id.toLowerCase()));
+    let insertedCount = 0;
+    if (docsToInsert.length > 0) {
+      const operations = docsToInsert.map((item) => ({
+        updateOne: {
+          filter: { ownerId: req.user._id, id: item.id },
+          update: {
+            $setOnInsert: {
+              id: item.id,
+              name: item.name,
+              sem: item.sem,
+              section: item.section,
+              days_per_week: item.days_per_week,
+              assigned_teacher_subject_combos: [],
+              total_class_hours: 0,
+              ownerId: req.user._id,
+            },
+          },
+          upsert: true,
+        },
+      }));
+      const result = await ClassModel.bulkWrite(operations, { ordered: false });
+      insertedCount = result.upsertedCount || 0;
+    }
+
+    res.status(201).json({
+      message: 'Class upload processed.',
+      totalRows: rows.length,
+      validRows: validRows.length,
+      insertedCount,
+      skippedCount: rows.length - insertedCount,
+      invalidRows,
+      duplicateInFile,
+      duplicateInDatabase: uniqueValidRows
+        .filter((item) => existingIdSet.has(item.id.toLowerCase()))
+        .map((item) => ({ row: item.row, id: item.id, reason: 'ID already exists' })),
+    });
+  } catch (e) {
+    res.status(400).json({
+      error: 'Failed to process uploaded file.',
+      details: e?.message || 'Unknown error',
+    });
   }
 });
 

@@ -147,94 +147,96 @@ const ManageTeacher = () => {
       ) : error ? (
         <div className="error-message">{error}</div>
       ) : (
-        <table className="styled-table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Faculty ID</th>
-              <th>Assigned Class-Subject</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {Array.isArray(filteredTeachers) &&
-              filteredTeachers.map((teacher) => (
-                <tr key={teacher._id}>
-                  <td>
-                    {editId === teacher._id ? (
-                      <input
-                        type="text"
-                        value={editName}
-                        onChange={(e) => setEditName(e.target.value)}
-                      />
-                    ) : (
-                      teacher.name
-                    )}
-                  </td>
-                  <td>
-                    {editId === teacher._id ? (
-                      <input
-                        type="text"
-                        value={editFacultyId}
-                        onChange={(e) => setEditFacultyId(e.target.value)}
-                      />
-                    ) : (
-                      teacher.id
-                    )}
-                  </td>
-                  <td>
-                    {combos
-                      .filter(c => c.faculty_id === teacher._id) // get combos for teacher
-                      .map(c => {
-                        const cls = classes.find(cls => cls._id === c.class_id);
-                        const subj = subjects.find(subj => subj._id === c.subject_id);
+        <div className="table-responsive">
+          <table className="styled-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Faculty ID</th>
+                <th>Assigned Class-Subject</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Array.isArray(filteredTeachers) &&
+                filteredTeachers.map((teacher) => (
+                  <tr key={teacher._id}>
+                    <td>
+                      {editId === teacher._id ? (
+                        <input
+                          type="text"
+                          value={editName}
+                          onChange={(e) => setEditName(e.target.value)}
+                        />
+                      ) : (
+                        teacher.name
+                      )}
+                    </td>
+                    <td>
+                      {editId === teacher._id ? (
+                        <input
+                          type="text"
+                          value={editFacultyId}
+                          onChange={(e) => setEditFacultyId(e.target.value)}
+                        />
+                      ) : (
+                        teacher.id
+                      )}
+                    </td>
+                    <td>
+                      {combos
+                        .filter(c => c.faculty_id === teacher._id) // get combos for teacher
+                        .map(c => {
+                          const cls = classes.find(cls => cls._id === c.class_id);
+                          const subj = subjects.find(subj => subj._id === c.subject_id);
 
-                        return (
-                          <div key={`${c.class_id}-${c.subject_id}`}>
-                            <p>
-                              Class: {cls?.name || "Unknown"} - Subject: {subj?.name || "Unknown"} ({subj?.id})
-                            </p>
-                          </div>
-                        );
-                      })}
-                  </td>
-                  <td>
-                    {editId === teacher._id ? (
-                      <>
-                        <button
-                          onClick={handleEditSubmit}
-                          className="primary-btn"
-                        >
-                          Save
-                        </button>
-                        <button
-                          onClick={() => setEditId(null)}
-                          className="secondary-btn"
-                        >
-                          Cancel
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          onClick={() => handleEdit(teacher)}
-                          className="primary-btn"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => handleDelete(teacher._id)}
-                          className="danger-btn"
-                        >
-                          Delete
-                        </button>
-                      </>
-                    )}
-                  </td>
-                </tr>
-              ))}
-          </tbody>
-        </table>
+                          return (
+                            <div key={`${c.class_id}-${c.subject_id}`}>
+                              <p>
+                                Class: {cls?.name || "Unknown"} - Subject: {subj?.name || "Unknown"} ({subj?.id})
+                              </p>
+                            </div>
+                          );
+                        })}
+                    </td>
+                    <td>
+                      {editId === teacher._id ? (
+                        <>
+                          <button
+                            onClick={handleEditSubmit}
+                            className="primary-btn"
+                          >
+                            Save
+                          </button>
+                          <button
+                            onClick={() => setEditId(null)}
+                            className="secondary-btn"
+                          >
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => handleEdit(teacher)}
+                            className="primary-btn"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handleDelete(teacher._id)}
+                            className="danger-btn"
+                          >
+                            Delete
+                          </button>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

@@ -1,3 +1,9 @@
 html {
-  font-size: 20px;
+  font-size: clamp(14px, 0.55vw + 12px, 20px);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }

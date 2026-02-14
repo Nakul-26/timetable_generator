@@ -7,8 +7,10 @@ const AddTeacher = () => {
   const [uploadFile, setUploadFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
+  const [singleError, setSingleError] = useState("");
+  const [singleSuccess, setSingleSuccess] = useState("");
+  const [bulkError, setBulkError] = useState("");
+  const [bulkSuccess, setBulkSuccess] = useState("");
   const [uploadFailures, setUploadFailures] = useState([]);
 
   const handleChange = (e) => {
@@ -26,11 +28,11 @@ const AddTeacher = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    setError("");
-    setSuccess("");
+    setSingleError("");
+    setSingleSuccess("");
     const validationError = validate();
     if (validationError) {
-      setError(validationError);
+      setSingleError(validationError);
       return;
     }
 
@@ -41,7 +43,7 @@ const AddTeacher = () => {
         id: facultyId,
       });
 
-      setSuccess("Teacher added successfully!");
+      setSingleSuccess("Teacher added successfully!");
       setName("");
       setFacultyId("");
     } catch (err) {
@@ -52,7 +54,7 @@ const AddTeacher = () => {
       } else {
         // console.error("[axios error message]", err.message);
       }
-      setError("Failed to add teacher.");
+      setSingleError("Failed to add teacher.");
     }
     setLoading(false);
   };
@@ -70,15 +72,15 @@ const AddTeacher = () => {
 
   const handleUpload = async () => {
     if (!uploadFile) {
-      setError("Please choose an Excel file first.");
-      setSuccess("");
+      setBulkError("Please choose an Excel file first.");
+      setBulkSuccess("");
       setUploadFailures([]);
       return;
     }
 
     setUploading(true);
-    setError("");
-    setSuccess("");
+    setBulkError("");
+    setBulkSuccess("");
     setUploadFailures([]);
     try {
       const buffer = await uploadFile.arrayBuffer();
@@ -118,18 +120,18 @@ const AddTeacher = () => {
       const skipped = failures.length;
       const inserted = insertedCount || 0;
       if (skipped > 0 && inserted > 0) {
-        setError(
+        setBulkError(
           `Uploaded partially. Inserted ${inserted} of ${totalRows} rows. Failed ${skipped} rows.`
         );
       } else if (skipped > 0 && inserted === 0) {
-        setError(`Upload failed. Failed ${skipped} of ${totalRows} rows.`);
+        setBulkError(`Upload failed. Failed ${skipped} of ${totalRows} rows.`);
       } else {
-        setSuccess(`Upload complete. Inserted ${inserted} of ${totalRows} rows.`);
+        setBulkSuccess(`Upload complete. Inserted ${inserted} of ${totalRows} rows.`);
       }
       setUploadFailures(failures);
       setUploadFile(null);
     } catch (err) {
-      setError(
+      setBulkError(
         err?.response?.data?.details
           ? `${err?.response?.data?.error} (${err?.response?.data?.details})`
           : err?.response?.data?.error || "Failed to upload Excel file."
@@ -140,8 +142,8 @@ const AddTeacher = () => {
   };
 
   const handleDownloadTemplate = async () => {
-    setError("");
-    setSuccess("");
+    setBulkError("");
+    setBulkSuccess("");
     try {
       const response = await axios.get("/faculties/template", {
         responseType: "arraybuffer",
@@ -158,9 +160,9 @@ const AddTeacher = () => {
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
-      setSuccess("Template downloaded successfully.");
+      setBulkSuccess("Template downloaded successfully.");
     } catch {
-      setError("Failed to download template.");
+      setBulkError("Failed to download template.");
     }
   };
 
@@ -194,6 +196,8 @@ const AddTeacher = () => {
           {loading ? "Adding..." : "Add Teacher"}
         </button>
       </form>
+      {singleError && <div className="error-message">{singleError}</div>}
+      {singleSuccess && <div className="success-message">{singleSuccess}</div>}
       <div className="styled-form" style={{ marginTop: "16px" }}>
         <h3>Bulk Upload (Excel)</h3>
         <p>Use columns: Name and ID (or Faculty ID) in the first sheet.</p>
@@ -221,8 +225,8 @@ const AddTeacher = () => {
           {uploading ? "Uploading..." : "Upload Excel"}
         </button>
       </div>
-      {error && <div className="error-message">{error}</div>}
-      {success && <div className="success-message">{success}</div>}
+      {bulkError && <div className="error-message">{bulkError}</div>}
+      {bulkSuccess && <div className="success-message">{bulkSuccess}</div>}
       {uploadFailures.length > 0 && (
         <div className="styled-form" style={{ marginTop: "12px" }}>
           <h3>Failed Rows</h3>
