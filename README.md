@@ -2,6 +2,8 @@
 
 A comprehensive, full-stack web application designed to autonomously generate college timetables using a backtracking algorithm. The system ensures conflict-free scheduling for teachers, subjects, and classes, while adhering to academic constraints like break times and lab blocks.
 
+**🔗 [Live Demo](https://timetable-generator-3tvm.vercel.app/)**
+
 ![Home page](image-1.png)
 
 ## 🚀 Features
@@ -63,7 +65,7 @@ A comprehensive, full-stack web application designed to autonomously generate co
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/your-repo/timetable-bmsit.git
+git clone https://github.com/Nakul-26/timetable_generator
 cd timetable-bmsit
 ```
 
