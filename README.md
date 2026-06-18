@@ -4,6 +4,10 @@ A comprehensive, full-stack web application designed to autonomously generate co
 
 **🔗 [Live Demo](https://timetable-generator-3tvm.vercel.app/)**
 
+**Demo Credentials:**
+- **Email:** `demo@bmsit.in`
+- **Password:** `password123`
+
 ![Home page](image-1.png)
 
 ## 🚀 Features
@@ -117,13 +121,6 @@ cd frontend
 npm run dev
 ```
 Navigate to `http://localhost:5173`.
-
----
-
-## 📝 Demo Credentials
-If you ran the seeding script:
-- **Email:** `demo@bmsit.in`
-- **Password:** `password123`
 
 ---
 
